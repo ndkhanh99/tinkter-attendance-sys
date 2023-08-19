@@ -1,3 +1,6 @@
+import pickle
+import facenet.src.facenet as facenet
+import argparse
 from Detector import main_app
 from create_classifier import train_classifer, regFaces
 from create_dataset import start_capture
@@ -9,6 +12,9 @@ import cv2
 import os
 import imutils
 from Helper.align import detect_face
+import datetime
+import pytz
+from datetime import timedelta
 
 import tensorflow as tf
 from imutils.video import VideoStream
@@ -16,14 +22,17 @@ import numpy as np
 import random
 import time
 import serial
+import firebase_admin
+from firebase_admin import credentials, firestore
 
-import argparse
-import facenet.src.facenet as facenet
-import pickle
 
-# from PIL import ImageTk, Image
-# from gender_prediction import emotion,ageAndgender
+cred = credentials.Certificate(
+    "key/attendace-sys-firebase-adminsdk-e2nde-ea40d5feeb.json")
+firebase_admin.initialize_app(cred)
+
 names = set()
+db = firestore.client()
+utc = pytz.UTC
 
 
 class MainUI(tk.Tk):
@@ -182,11 +191,48 @@ class PageTwo(tk.Frame):
         tk.Frame.__init__(self, parent)
         self.controller = controller
 
+        # def deleteDB(msg):
+        #     print('Running. Press CTRL-C to exit.')
+        #     with serial.Serial("/dev/cu.usbmodem14201", 9600, timeout=1) as arduino:
+        #         time.sleep(0.1)  # wait for serial to open
+        #         if arduino.isOpen():
+        #             print("{} connected!".format(arduino.port))
+        #             try:
+        #                 while True:
+        #                     time.sleep(0.5)  # wait for arduino to answer
+        #                     answer = arduino.readline()
+        #                     print(answer)
+        #                     if answer == b'sensor templates':
+        #                         arduino.write(str(msg).encode())
+        #                     if answer == b'success':
+        #                         # print('break')
+        #                         arduino.flushInput()
+        #                         break
+        #                     # arduino.flushInput()
+        #             except KeyboardInterrupt:
+        #                 print("KeyboardInterrupt has been caught.")
+
         color1 = '#020f12'
         color2 = '#05d7ff'
         color3 = '#65e7ff'
         color4 = 'BLACK'
         color5 = 'YELLOW'
+        # self.buttoncanc = tk.Button(self,
+        #                             background=color2,
+        #                             foreground=color4,
+        #                             activebackground=color3,
+        #                             activeforeground=color4,
+        #                             highlightthickness=2,
+        #                             highlightbackground=color2,
+        #                             width=15,
+        #                             height=2,
+        #                             border=0,
+        #                             cursor='hand2',
+        #                             text="Empty Database",
+        #                             font=('Arial', 16, 'bold'),
+        #                             command=deleteDB(3))
+        # self.buttoncanc.place(relx=0.5, rely=0.7, anchor='center')
+
         self.buttoncanc = tk.Button(self,
                                     background=color2,
                                     foreground=color4,
@@ -267,9 +313,9 @@ class PageThree(tk.Frame):
                     except KeyboardInterrupt:
                         print("KeyboardInterrupt has been caught.")
 
-        def arduino_enroll(msg):
+        def arduino_enroll(msg, new_finger_id):
             print(msg)
-            print(fingerprint_id_entry.get())
+            print(new_finger_id)
             print('Running. Press CTRL-C to exit.')
             with serial.Serial("/dev/cu.usbmodem14201", 9600, timeout=1) as arduino:
                 time.sleep(0.1)  # wait for serial to open
@@ -280,21 +326,25 @@ class PageThree(tk.Frame):
                             time.sleep(0.5)  # wait for arduino to answer
                             answer = arduino.readline()
                             print(answer)
-                            if answer == b'Sensor contains 11 templates\r\n':
+                            if b"Sensor contains" in answer or b"doesn't" in answer:
                                 arduino.write(str(msg).encode())
                             if answer == b'#id\r\n':
                                 # print('break')
                                 arduino.flushInput()
                                 # cmd = str(input("Enter command : "))
-                                cmd = str(fingerprint_id_entry.get())
+                                cmd = str(new_finger_id)
                                 arduino.write(str(cmd).encode())
                                 while True:
                                     answer = arduino.readline()
                                     print(answer)
                                     if answer == b'Place same finger again\r\n':
-                                        self.notify.config(
-                                            text='Take your finger out and Put it back')
+                                        messagebox.showinfo(
+                                            'NOTIFY', 'Take out and Place same finger again!')
                                     if answer == b'Stored!\r\n':
+                                        db.collection('users').document(
+                                            student_code_entry.get()).set({'finger_id': str(new_finger_id)}, merge=True)
+                                        db.collection(
+                                            'fingers').document('id').update({'id': new_finger_id + 1})
                                         self.notify.config(
                                             text='Successfully encode fingerprint')
                                         break
@@ -306,11 +356,19 @@ class PageThree(tk.Frame):
 
         def start_enroll():
             stop_enroll()
-            self.notify.config(text='Loading.......')
-            self.notify.place(relx=0.5, rely=0.4, anchor='center')
             global message
             message == True
-            arduino_enroll(2)
+            result = db.collection('users').document(
+                student_code_entry.get()).get()
+            if result.exists:
+                new_finger_id = db.collection('fingers').document('id').get()
+                new_finger_id = new_finger_id.to_dict()
+                new_finger_id = new_finger_id['id']
+                arduino_enroll(2, new_finger_id)
+            else:
+                print('no match')
+                messagebox.showwarning('ALERT', 'No Users Match')
+                return
 
         def stop_enroll():
             global message
@@ -320,31 +378,20 @@ class PageThree(tk.Frame):
             self, text="Enter your student code to register new fingerprint")
         label1.place(relx=0.5, rely=0.1, anchor='center')
 
-        fingerprint_id_entry = tk.Entry(self)
-        fingerprint_id_entry.place(relx=0.5, rely=0.2, anchor='center')
+        student_code_entry = tk.Entry(self)
+        student_code_entry.place(relx=0.5, rely=0.2, anchor='center')
 
         buttoncanc2 = tk.Button(self, text="Enroll Fingerprint", bg="#ffffff",
                                 fg="#263942", command=start_enroll)
         buttoncanc2.place(relx=0.5, rely=0.3, anchor='center')
 
         self.notify = tk.Label(
-            self, text="abc")
+            self, text="", foreground='green',)
         self.notify.place(relx=0.5, rely=0.4, anchor='center')
 
         buttoncanc1 = tk.Button(self, text="Cancel", bg="#ffffff",
                                 fg="#263942", command=lambda: controller.show_frame("StartPage"))
         buttoncanc1.place(relx=0.5, rely=0.5, anchor='center')
-
-        # def initFingerprint():
-        #     if message == True:
-
-        #         mode = int(input("Select mode detect"))
-
-        #         if mode == 1:
-        #             arduino_detect(1)
-
-        #         if mode == 2:
-        #             arduino_enroll(2)
 
 
 class PageDetectFingert(tk.Frame):
@@ -359,7 +406,7 @@ class PageDetectFingert(tk.Frame):
         status = 'loading'
         self.controller = controller
 
-        def arduino_detect(msg):
+        def arduino_detect(msg, mode):
             print(msg)
             print('Running. Press CTRL-C to exit.')
             with serial.Serial("/dev/cu.usbmodem14201", 9600, timeout=1) as arduino:
@@ -371,37 +418,95 @@ class PageDetectFingert(tk.Frame):
                             time.sleep(0.5)  # wait for arduino to answer
                             answer = arduino.readline()
                             print(answer)
-                            if answer == b'Sensor contains 12 templates\r\n':
+                            if b"doesn't" in answer:
+                                messagebox.showinfo(
+                                    "ALERT", "No fingerprint to detect")
+                                break
+                            if b'Sensor contains' in answer:
                                 arduino.write(str(msg).encode())
                                 while True:
                                     answer = arduino.readline()
                                     print(answer)
-                                    if answer == b'ok':
+                                    idText = b''
+                                    if b'ID' in answer:
+                                        idText = answer
+                                    if b'ok' in answer or b'Unknown' in answer:
                                         self.notify1.config(
                                             text='Successfully detect fingerprint')
+                                        finger_id = idText.decode(
+                                            'utf-8').split("#")[1]
+                                        print(finger_id)
+                                        if finger_id != '':
+                                            query = db.collection('users').where(
+                                                "finger_id", "==", finger_id).get()
+                                            for doc in query:
+                                                user = doc.to_dict()
+                                                result = db.collection(
+                                                    'current_subject').document('current').get()
+                                                result = result.to_dict()
+                                                today = datetime.datetime.now()
+                                                status = 'in_time'
+                                                if mode == 1:
+                                                    time_compare = result['time_in'] + \
+                                                        timedelta(hours=7)
+                                                    if utc.localize(today) > time_compare:
+                                                        status = 'vao_tre'
+                                                        print('vao_tre')
+                                                    else:
+                                                        status = 'vao_dung_gio'
+                                                        print('vao dung gio')
+                                                    db.collection('check_in').add(
+                                                        {'subject': result['name'], 'student_id': user['student_id'], 'student_name': user['name'], 'status': status, 'type': 'fingerprint_detect', 'finger_id': user['finger_id'], 'time_in': today - timedelta(hours=7)})
+                                                else:
+                                                    checkExist = db.collection('check_in').where(
+                                                        "finger_id", "==", finger_id).get()
+                                                    if len(checkExist) == 0:
+                                                        messagebox.showwarning(
+                                                            'ALERT', "You haven't check in")
+                                                        return
+                                                    time_compare = result['time_out'] + \
+                                                        timedelta(hours=7)
+                                                    if utc.localize(today) > time_compare:
+                                                        status = 'ra_dung_gio'
+                                                        print(
+                                                            'ra dung gio')
+                                                    else:
+                                                        status = 'ra_som'
+                                                        print('ra som')
 
-                                        self.notify1.config(text="")
+                                                    db.collection('check_out').add(
+                                                        {'subject': result['name'], 'student_id': user['student_id'], 'student_name': user['name'], 'status': status, 'type': 'fingerprint_detect', 'finger_id': user['finger_id'], 'time_out': today - timedelta(hours=7)})
                                         break
                                     # return answer
                                 break
                     except KeyboardInterrupt:
                         print("KeyboardInterrupt has been caught.")
 
-        def start_detect():
+        # finger checkin
+        def start_check_in():
             stop_detect()
             global status
             status = 'Init Parameters'
             print(status)
             global message
             message == True
-            arduino_detect(1)
+            arduino_detect(1, 1)
+
+        # finger checkout
+        def start_check_out():
+            stop_detect()
+            arduino_detect(1, 2)
 
         def stop_detect():
             global message
             message == False
 
-        buttoncanc2 = tk.Button(self, text="Enroll Fingerprint", bg="#ffffff",
-                                fg="#263942", command=start_detect)
+        buttoncanc2 = tk.Button(self, text="Finger Check In", bg="#ffffff",
+                                fg="#263942", command=start_check_in)
+        buttoncanc2.place(relx=0.5, rely=0.2, anchor='center')
+
+        buttoncanc2 = tk.Button(self, text="Finger Check Out", bg="#ffffff",
+                                fg="#263942", command=start_check_out)
         buttoncanc2.place(relx=0.5, rely=0.3, anchor='center')
 
         self.notify1 = tk.Label(
@@ -441,7 +546,9 @@ class PageTakeFace(tk.Frame):
             detector = cv2.CascadeClassifier(
                 "./data/haarcascade_frontalface_default.xml")
 
-            filepath = './data/student/raw/' + stundent_id_entry.get()
+            id = stundent_id_entry.get()
+
+            filepath = './data/student/raw/' + id
 
             isExist = os.path.exists(filepath)
 
@@ -490,6 +597,8 @@ class PageTakeFace(tk.Frame):
                     if num_of_images == 21:
                         stop_vid()
                         num_of_images = 0
+                        db.collection('users').document(id).set(
+                            {'name': first_name_entry.get(), 'student_id': id, 'image_path': filepath})
                         messagebox.showinfo(
                             "INSTRUCTIONS", "We captured 20 pic of your Face.")
                         return 'ok'
@@ -607,9 +716,11 @@ class PageDetectFace(tk.Frame):
         global cap_detect
         cap_detect = None
         global count_unknown
-        global detect_time
         count_unknown = 0
+        global detect_time
         detect_time = 0
+        global mode
+        mode = 1
         # student_id = '_'.join(['student', stundent_id_entry])
 
         def detect_frame():
@@ -624,7 +735,7 @@ class PageDetectFace(tk.Frame):
                     # frame = cap.read()
                     frame = imutils.resize(frame, width=600)
                     frame = cv2.flip(frame, 1)
-                    rand_name = random.randint(0, 1000)
+                    # rand_name = random.randint(0, 1000)
                     bounding_boxes, _ = detect_face.detect_face(
                         frame, MINSIZE, pnet, rnet, onet, THRESHOLD, FACTOR)
                     faces_found = bounding_boxes.shape[0]
@@ -676,11 +787,45 @@ class PageDetectFace(tk.Frame):
                                             1, (255, 255, 255), thickness=1, lineType=2)
 
                                 file_name = best_name + ".jpg"
-                                if detect_time == 3:
+                                if detect_time == 2:
                                     cv2.imwrite(os.path.join(
                                         image_path, file_name), frame)
                                     cv2.destroyAllWindows()
-                                    print('complete detect')
+                                    result = db.collection(
+                                        'current_subject').document('current').get()
+                                    result = result.to_dict()
+                                    user = db.collection(
+                                        'current_subject').document('current').get()
+                                    user.to_dict()
+                                    today = datetime.datetime.now()
+                                    print(today)
+                                    status = 'in_time'
+                                    global mode
+                                    if mode == 1:
+                                        time_compare = result['time_in'] + \
+                                            timedelta(hours=7)
+                                        print(time_compare)
+                                        if utc.localize(today) > time_compare:
+                                            status = 'vao_tre'
+                                            print('vao tre')
+                                        else:
+                                            status = 'vao_dung_gio'
+                                            print('vao dung gio')
+                                        db.collection('check_in').add(
+                                            {'subject': result['name'], 'student_id': best_name, 'student_name': 'name', 'status': status, 'type': 'face_detect', 'finger_id': user['finger_id'], 'time_in': today - timedelta(hours=7)})
+                                        print('complete detect')
+                                    else:
+                                        time_compare = result['time_out'] + \
+                                            timedelta(hours=7)
+                                        if utc.localize(today) > time_compare:
+                                            status = 'ra_dung_gio'
+                                            print('ra dung gio')
+                                        else:
+                                            status = 'ra_som'
+                                            print('ra som')
+                                        db.collection('check_out').add(
+                                            {'subject': result['name'], 'student_id': best_name, 'student_name': 'name', 'status': status, 'type': 'face_detect', 'time_out': today - timedelta(hours=7)})
+                                        print('complete detect')
                                     time.sleep(1)
                                     stop_detect()
                                     detect_time = 0
@@ -688,7 +833,6 @@ class PageDetectFace(tk.Frame):
 
                                 detect_time += 1
                             else:
-                                name = 'Unknown'
                                 print('Unknown')
                                 print(count_unknown)
                                 if count_unknown == 20:
@@ -716,11 +860,20 @@ class PageDetectFace(tk.Frame):
 
                 detect_widget.after(10, detect_frame)
 
-        def start_detect():
-            global cam_detect_on, cap_detect
+        def start_check_in():
+            global cam_detect_on, cap_detect, mode
             stop_detect()
             cam_detect_on = True
             cap_detect = cv2.VideoCapture(1)
+            mode = 1
+            detect_frame()
+
+        def start_check_out():
+            global cam_detect_on, cap_detect, mode
+            stop_detect()
+            cam_detect_on = True
+            cap_detect = cv2.VideoCapture(1)
+            mode = 2
             detect_frame()
 
         def stop_detect():
@@ -743,9 +896,13 @@ class PageDetectFace(tk.Frame):
                                 fg="#263942", command=stop_detect)
         buttoncanc3.place(relx=0.5, rely=0.3, anchor='center')
 
-        buttoncanc2 = tk.Button(self, text="Detect", bg="#ffffff",
-                                fg="#263942", command=start_detect)
+        buttoncanc2 = tk.Button(self, text="Face Check In", bg="#ffffff",
+                                fg="#263942", command=start_check_in)
         buttoncanc2.place(relx=0.5, rely=0.1, anchor='center')
+
+        buttoncanc2 = tk.Button(self, text="Face Check Out", bg="#ffffff",
+                                fg="#263942", command=start_check_out)
+        buttoncanc2.place(relx=0.5, rely=0.2, anchor='center')
 
         detect_widget = tk.Label(self)
         detect_widget.place(relx=0.5, rely=0.7, anchor='center')
