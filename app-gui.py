@@ -24,11 +24,16 @@ import time
 import serial
 import firebase_admin
 from firebase_admin import credentials, firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 
 cred = credentials.Certificate(
     "key/attendace-sys-firebase-adminsdk-e2nde-ea40d5feeb.json")
 firebase_admin.initialize_app(cred)
+
+global arduino
+arduino = serial.Serial("/dev/cu.usbmodem14201", 9600, timeout=1)
+time.sleep(0.2)  # wait for serial to open
 
 names = set()
 db = firestore.client()
@@ -191,47 +196,11 @@ class PageTwo(tk.Frame):
         tk.Frame.__init__(self, parent)
         self.controller = controller
 
-        # def deleteDB(msg):
-        #     print('Running. Press CTRL-C to exit.')
-        #     with serial.Serial("/dev/cu.usbmodem14201", 9600, timeout=1) as arduino:
-        #         time.sleep(0.1)  # wait for serial to open
-        #         if arduino.isOpen():
-        #             print("{} connected!".format(arduino.port))
-        #             try:
-        #                 while True:
-        #                     time.sleep(0.5)  # wait for arduino to answer
-        #                     answer = arduino.readline()
-        #                     print(answer)
-        #                     if answer == b'sensor templates':
-        #                         arduino.write(str(msg).encode())
-        #                     if answer == b'success':
-        #                         # print('break')
-        #                         arduino.flushInput()
-        #                         break
-        #                     # arduino.flushInput()
-        #             except KeyboardInterrupt:
-        #                 print("KeyboardInterrupt has been caught.")
-
         color1 = '#020f12'
         color2 = '#05d7ff'
         color3 = '#65e7ff'
         color4 = 'BLACK'
         color5 = 'YELLOW'
-        # self.buttoncanc = tk.Button(self,
-        #                             background=color2,
-        #                             foreground=color4,
-        #                             activebackground=color3,
-        #                             activeforeground=color4,
-        #                             highlightthickness=2,
-        #                             highlightbackground=color2,
-        #                             width=15,
-        #                             height=2,
-        #                             border=0,
-        #                             cursor='hand2',
-        #                             text="Empty Database",
-        #                             font=('Arial', 16, 'bold'),
-        #                             command=deleteDB(3))
-        # self.buttoncanc.place(relx=0.5, rely=0.7, anchor='center')
 
         self.buttoncanc = tk.Button(self,
                                     background=color2,
@@ -317,32 +286,44 @@ class PageThree(tk.Frame):
             print(msg)
             print(new_finger_id)
             print('Running. Press CTRL-C to exit.')
-            with serial.Serial("/dev/cu.usbmodem14201", 9600, timeout=1) as arduino:
+            with serial.Serial("/dev/cu.usbmodem14201", 9600, timeout=1) as enroll_finger:
                 time.sleep(0.1)  # wait for serial to open
-                if arduino.isOpen():
-                    print("{} connected!".format(arduino.port))
+                # global arduino
+                if enroll_finger.isOpen():
+                    print("{} connected!".format(enroll_finger.port))
                     try:
                         while True:
                             time.sleep(0.5)  # wait for arduino to answer
-                            answer = arduino.readline()
+                            answer = enroll_finger.readline()
                             print(answer)
-                            if b"Sensor contains" in answer or b"doesn't" in answer:
-                                arduino.write(str(msg).encode())
+                            # if b"Sensor contains" in answer or b"doesn't" in answer:
+                            enroll_finger.write(str(msg).encode())
                             if answer == b'#id\r\n':
                                 # print('break')
                                 arduino.flushInput()
+                                arduino.flushOutput()
+                                arduino.reset_input_buffer()
+                                arduino.reset_output_buffer()
                                 # cmd = str(input("Enter command : "))
                                 cmd = str(new_finger_id)
-                                arduino.write(str(cmd).encode())
+                                enroll_finger.write(str(cmd).encode())
                                 while True:
-                                    answer = arduino.readline()
+                                    answer = enroll_finger.readline()
                                     print(answer)
                                     if answer == b'Place same finger again\r\n':
                                         messagebox.showinfo(
                                             'NOTIFY', 'Take out and Place same finger again!')
+                                    if b'did not match' in answer:
+                                        print('did not match')
+                                        return
+                                    if b'ID#' in answer:
+                                        id_ = answer
+                                        id_ = id_.decode(
+                                            'utf-8').split("#")[1]
+                                        print(id_)
                                     if answer == b'Stored!\r\n':
                                         db.collection('users').document(
-                                            student_code_entry.get()).set({'finger_id': str(new_finger_id)}, merge=True)
+                                            student_code_entry.get()).set({'finger_id': id_}, merge=True)
                                         db.collection(
                                             'fingers').document('id').update({'id': new_finger_id + 1})
                                         self.notify.config(
@@ -361,10 +342,19 @@ class PageThree(tk.Frame):
             result = db.collection('users').document(
                 student_code_entry.get()).get()
             if result.exists:
-                new_finger_id = db.collection('fingers').document('id').get()
-                new_finger_id = new_finger_id.to_dict()
-                new_finger_id = new_finger_id['id']
-                arduino_enroll(2, new_finger_id)
+                print(result.to_dict())
+                if "finger_id" in result.to_dict():
+                    messagebox.showinfo(
+                        'ALERT', 'You already registered your fingerprint!')
+                    print("Exists")
+                    return
+                else:
+                    print("new finger register")
+                    new_finger_id = db.collection(
+                        'fingers').document('id').get()
+                    new_finger_id = new_finger_id.to_dict()
+                    new_finger_id = new_finger_id['id']
+                    arduino_enroll(2, new_finger_id)
             else:
                 print('no match')
                 messagebox.showwarning('ALERT', 'No Users Match')
@@ -409,78 +399,94 @@ class PageDetectFingert(tk.Frame):
         def arduino_detect(msg, mode):
             print(msg)
             print('Running. Press CTRL-C to exit.')
-            with serial.Serial("/dev/cu.usbmodem14201", 9600, timeout=1) as arduino:
-                time.sleep(0.1)  # wait for serial to open
-                if arduino.isOpen():
-                    print("{} connected!".format(arduino.port))
-                    try:
+            # with serial.Serial("/dev/cu.usbmodem14201", 9600, timeout=1) as arduino:
+            #     time.sleep(0.1)  # wait for serial to open
+            global arduino
+            if arduino.isOpen():
+                print("{} connected!".format(arduino.port))
+                try:
+                    while True:
+                        time.sleep(0.5)  # wait for arduino to answer
+                        answer = arduino.readline()
+                        print(answer)
+                        if b"doesn't" in answer:
+                            messagebox.showinfo(
+                                "ALERT", "No fingerprint to detect")
+                            break
+                        # if b'Sensor contains' in answer:
+                        arduino.write(str(msg).encode())
+                        arduino.flushInput()
                         while True:
-                            time.sleep(0.5)  # wait for arduino to answer
                             answer = arduino.readline()
                             print(answer)
-                            if b"doesn't" in answer:
-                                messagebox.showinfo(
-                                    "ALERT", "No fingerprint to detect")
-                                break
-                            if b'Sensor contains' in answer:
-                                arduino.write(str(msg).encode())
-                                while True:
-                                    answer = arduino.readline()
-                                    print(answer)
-                                    idText = b''
-                                    if b'ID' in answer:
-                                        idText = answer
-                                    if b'ok' in answer or b'Unknown' in answer:
-                                        self.notify1.config(
-                                            text='Successfully detect fingerprint')
-                                        finger_id = idText.decode(
-                                            'utf-8').split("#")[1]
-                                        print(finger_id)
-                                        if finger_id != '':
-                                            query = db.collection('users').where(
-                                                "finger_id", "==", finger_id).get()
-                                            for doc in query:
-                                                user = doc.to_dict()
-                                                result = db.collection(
-                                                    'current_subject').document('current').get()
-                                                result = result.to_dict()
-                                                today = datetime.datetime.now()
-                                                status = 'in_time'
-                                                if mode == 1:
-                                                    time_compare = result['time_in'] + \
-                                                        timedelta(hours=7)
-                                                    if utc.localize(today) > time_compare:
-                                                        status = 'vao_tre'
-                                                        print('vao_tre')
-                                                    else:
-                                                        status = 'vao_dung_gio'
-                                                        print('vao dung gio')
-                                                    db.collection('check_in').add(
-                                                        {'subject': result['name'], 'student_id': user['student_id'], 'student_name': user['name'], 'status': status, 'type': 'fingerprint_detect', 'finger_id': user['finger_id'], 'time_in': today - timedelta(hours=7)})
-                                                else:
-                                                    checkExist = db.collection('check_in').where(
-                                                        "finger_id", "==", finger_id).get()
-                                                    if len(checkExist) == 0:
-                                                        messagebox.showwarning(
-                                                            'ALERT', "You haven't check in")
-                                                        return
-                                                    time_compare = result['time_out'] + \
-                                                        timedelta(hours=7)
-                                                    if utc.localize(today) > time_compare:
-                                                        status = 'ra_dung_gio'
-                                                        print(
-                                                            'ra dung gio')
-                                                    else:
-                                                        status = 'ra_som'
-                                                        print('ra som')
+                            idText = b''
+                            if b'Unknown' in answer or b'no match' in answer:
+                                return
+                            if b'ID' in answer:
+                                idText = answer
+                            if b'ok' in answer:
+                                self.notify1.config(
+                                    text='Successfully detect fingerprint')
+                                finger_id = idText.decode(
+                                    'utf-8').split("#")[1]
+                                print(finger_id)
+                                if finger_id != '':
+                                    query = db.collection('users').where(
+                                        "finger_id", "==", finger_id).get()
+                                    for doc in query:
+                                        user = doc.to_dict()
+                                        result = db.collection(
+                                            'current_subject').document('current').get()
+                                        result = result.to_dict()
+                                        today = datetime.datetime.now()
+                                        status = 'in_time'
+                                        if mode == 1:
+                                            checkInExist = db.collection(
+                                                'check_in')
+                                            checkInExist = checkInExist.where(
+                                                filter=FieldFilter('subject', '==', result['name']))
+                                            checkInExist = checkInExist.where(
+                                                filter=FieldFilter('finger_id', '==', finger_id))
+                                            checkInExist = checkInExist.get()
+                                            if len(checkInExist) != 0:
+                                                messagebox.showwarning(
+                                                    'ALERT', "You had checked in this subject")
+                                                return
 
-                                                    db.collection('check_out').add(
-                                                        {'subject': result['name'], 'student_id': user['student_id'], 'student_name': user['name'], 'status': status, 'type': 'fingerprint_detect', 'finger_id': user['finger_id'], 'time_out': today - timedelta(hours=7)})
-                                        break
-                                    # return answer
+                                            time_compare = result['time_in'] + \
+                                                timedelta(hours=7)
+                                            if utc.localize(today) > time_compare:
+                                                status = 'vao_tre'
+                                                print('vao_tre')
+                                            else:
+                                                status = 'vao_dung_gio'
+                                                print('vao dung gio')
+                                            db.collection('check_in').add(
+                                                {'subject': result['name'], 'student_id': user['student_id'], 'student_name': user['name'], 'status': status, 'type': 'fingerprint_detect', 'finger_id': user['finger_id'], 'time_in': today - timedelta(hours=7)})
+                                        else:
+                                            checkExist = db.collection('check_in').where(
+                                                "finger_id", "==", finger_id).get()
+                                            if len(checkExist) == 0:
+                                                messagebox.showwarning(
+                                                    'ALERT', "You haven't check in")
+                                                return
+                                            time_compare = result['time_out'] + \
+                                                timedelta(hours=7)
+                                            if utc.localize(today) > time_compare:
+                                                status = 'ra_dung_gio'
+                                                print(
+                                                    'ra dung gio')
+                                            else:
+                                                status = 'ra_som'
+                                                print('ra som')
+
+                                            db.collection('check_out').add(
+                                                {'subject': result['name'], 'student_id': user['student_id'], 'student_name': user['name'], 'status': status, 'type': 'fingerprint_detect', 'finger_id': user['finger_id'], 'time_out': today - timedelta(hours=7)})
                                 break
-                    except KeyboardInterrupt:
-                        print("KeyboardInterrupt has been caught.")
+                            # return answer
+                        break
+                except KeyboardInterrupt:
+                    print("KeyboardInterrupt has been caught.")
 
         # finger checkin
         def start_check_in():
