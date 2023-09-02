@@ -29,9 +29,11 @@ db = firestore.client()
 #     print(i, result[i])
 # print(result.date_in)
 
-# result = db.collection(
-#     'current_subject').document('current').get()
-# result = result.to_dict()
+result = db.collection(
+    'current_subject').document('current').get()
+result = result.to_dict()
+print(result['name'])
+
 # time_compare = result['time_in'] + timedelta(hours=7)
 # print(time_compare)
 # today = datetime.datetime.now()
@@ -51,7 +53,6 @@ db = firestore.client()
 # else:
 #     print('no match')
 
-
-checkExist = db.collection('check_in').where(
-    "finger_id", "==", '2').get()
-print(len(checkExist))
+# checkExist = db.collection('check_in').where(
+#     "finger_id", "==", '2').get()
+# print(len(checkExist))
