@@ -639,7 +639,7 @@ class PageTakeFace(tk.Frame):
                     # Repeat the same process after every 10 seconds
                     num_of_images += 1
 
-                    if num_of_images == 51:
+                    if num_of_images == 92:
                         stop_vid()
                         num_of_images = 0
                         db.collection('users').document(id).set(

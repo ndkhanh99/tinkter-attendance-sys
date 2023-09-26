@@ -59,8 +59,8 @@ def startTraining(data, subject):
             'batch_size': 1000,
             'image_size': 160,
             'seed': 666,
-            'min_nrof_images_per_class': 50,
-            'nrof_train_images_per_class': 35}
+            'min_nrof_images_per_class': 70,
+            'nrof_train_images_per_class': 60}
         mainTrain(args)
         data = 'complete trained'
         return
