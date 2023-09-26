@@ -639,20 +639,23 @@ class PageTakeFace(tk.Frame):
                     # Repeat the same process after every 10 seconds
                     num_of_images += 1
 
-                    if num_of_images == 21:
+                    if num_of_images == 51:
                         stop_vid()
                         num_of_images = 0
                         db.collection('users').document(id).set(
                             {'name': first_name_entry.get(), 'student_id': id, 'image_path': filepath})
                         messagebox.showinfo(
-                            "INSTRUCTIONS", "We captured 20 pic of your Face.")
+                            "INSTRUCTIONS", "We captured 50 pic of your Face.")
                         return 'ok'
 
                 label_widget.after(10, display_frame)
 
         def start_vid():
             global cam_on, cap
-            global subject_now
+            # global subject_now
+            subject_now = db.collection(
+                'current_subject').document('current').get()
+            subject_now = subject_now.to_dict()
             stop_vid()
             id = stundent_id_entry.get()
 
@@ -725,10 +728,10 @@ class PageTakeFace(tk.Frame):
         for widget in user_info_frame.winfo_children():
             widget.grid_configure(padx=10, pady=5)
 
-        # button1 = tk.Button(self, text="Training Model",
-        #                     command=trainmodel)
-        # button1.grid(row=8, column=0, padx=10,
-        #              pady=10, ipadx=5, ipady=4)
+        button1 = tk.Button(self, text="Training Model",
+                            command=trainmodel)
+        button1.grid(row=8, column=0, padx=10,
+                     pady=10, ipadx=5, ipady=4)
 
 
 MINSIZE = 20
@@ -839,9 +842,9 @@ class PageDetectFace(tk.Frame):
                 ret, frame = cap_detect.read()
 
                 if ret:
-                    # for images in os.listdir("data/student/raw/subject_4/1811945"):
+                    # for images in os.listdir("/Users/macbook/Downloads/raw/jack"):
                     #     img = cv2.imread(os.path.join(
-                    #         "data/student/raw/subject_4/1811945/", images))
+                    #         "/Users/macbook/Downloads/raw/jack/", images))
                     # if images is not None:
                     # images.append(img)
                     frame = imutils.resize(frame, width=600)
@@ -879,15 +882,15 @@ class PageDetectFace(tk.Frame):
                             best_class_probabilities = predictions[(
                                 np.arange(len(best_class_indices)), best_class_indices)]
                             best_name = class_names[best_class_indices[0]]
-                            cv2.rectangle(frame, (bb[i][0], bb[i][1]), (bb[i][2], bb[i][3]), (0,
-                                                                                              255,
-                                                                                              0), 2)
-                            text_x = bb[i][0]
-                            text_y = bb[i][3] + 20
-                            cv2.putText(frame, best_name, (text_x, text_y), (cv2.FONT_HERSHEY_COMPLEX_SMALL), 1,
-                                        (255, 255, 255), thickness=1, lineType=2)
-                            cv2.putText(frame, (str(round(best_class_probabilities[0], 3))), (text_x, text_y + 17), (cv2.FONT_HERSHEY_COMPLEX_SMALL),
-                                        1, (255, 255, 255), thickness=1, lineType=2)
+                            # cv2.rectangle(frame, (bb[i][0], bb[i][1]), (bb[i][2], bb[i][3]), (0,
+                            #                                                                   255,
+                            #                                                                   0), 2)
+                            # text_x = bb[i][0]
+                            # text_y = bb[i][3] + 20
+                            # cv2.putText(frame, best_name, (text_x, text_y), (cv2.FONT_HERSHEY_COMPLEX_SMALL), 1,
+                            #             (255, 255, 255), thickness=1, lineType=2)
+                            # cv2.putText(frame, (str(round(best_class_probabilities[0], 3))), (text_x, text_y + 17), (cv2.FONT_HERSHEY_COMPLEX_SMALL),
+                            #             1, (255, 255, 255), thickness=1, lineType=2)
                             print('Name: {}, Probability: {}'.format(
                                 best_name, best_class_probabilities))
                             count_unknown += 1
@@ -898,23 +901,23 @@ class PageDetectFace(tk.Frame):
                                     os.makedirs(image_path)
                                 print('Name: {}, Probability: {}'.format(
                                     best_name, best_class_probabilities))
-                                # cv2.rectangle(frame, (bb[i][0], bb[i][1]), (bb[i][2], bb[i][3]), (0,
-                                #                                                                   255,
-                                #                                                                   0), 2)
-                                # text_x = bb[i][0]
-                                # text_y = bb[i][3] + 20
-                                # cv2.putText(frame, best_name, (text_x, text_y), (cv2.FONT_HERSHEY_COMPLEX_SMALL), 1,
-                                #             (255, 255, 255), thickness=1, lineType=2)
-                                # cv2.putText(frame, (str(round(best_class_probabilities[0], 3))), (text_x, text_y + 17), (cv2.FONT_HERSHEY_COMPLEX_SMALL),
-                                #             1, (255, 255, 255), thickness=1, lineType=2)
+                                cv2.rectangle(frame, (bb[i][0], bb[i][1]), (bb[i][2], bb[i][3]), (0,
+                                                                                                  255,
+                                                                                                  0), 2)
+                                text_x = bb[i][0]
+                                text_y = bb[i][3] + 20
+                                cv2.putText(frame, best_name, (text_x, text_y), (cv2.FONT_HERSHEY_COMPLEX_SMALL), 1,
+                                            (255, 255, 255), thickness=1, lineType=2)
+                                cv2.putText(frame, (str(round(best_class_probabilities[0], 3))), (text_x, text_y + 17), (cv2.FONT_HERSHEY_COMPLEX_SMALL),
+                                            1, (255, 255, 255), thickness=1, lineType=2)
 
                                 file_name = best_name + ".jpg"
                                 result = db.collection(
                                     'current_subject').document('current').get()
                                 result = result.to_dict()
 
-                                # cv2.imwrite(os.path.join(
-                                #     image_path, file_name), frame)
+                                cv2.imwrite(os.path.join(
+                                    image_path, file_name), frame)
                                 cv2.destroyAllWindows()
                                 user = db.collection(
                                     'users').document(best_name).get()
@@ -962,12 +965,14 @@ class PageDetectFace(tk.Frame):
                                         return
                                     time_compare = result['time_out'] + \
                                         timedelta(hours=7)
-                                    if utc.localize(today) > time_compare:
+                                    time_compare_1 = result['time_out'] + \
+                                        timedelta(hours=7, minutes=15)
+                                    if time_compare_1 > utc.localize(today) > time_compare:
                                         status = 'ra_dung_gio'
                                         print('ra dung gio')
                                     else:
-                                        status = 'ra_som'
-                                        print('ra som')
+                                        status = 'check_out_sai'
+                                        print('check_out_sai')
                                     db.collection('check_out').add(
                                         {'subject': result['name'], 'student_id': best_name, 'student_name': 'name', 'status': status, 'type': 'face_detect', 'time_out': today - timedelta(hours=7)})
                                     print('complete detect')
@@ -977,10 +982,20 @@ class PageDetectFace(tk.Frame):
                                 stop_detect()
                                 detect_time = 0
                                 return best_name
+                                # if count_unknown == 5:
+                                #     count_unknown = 0
+                                #     print('break')
+                                #     best_name = 'unknown'
+                                #     cv2.destroyAllWindows()
+                                #     stop_detect()
+                                #     time.sleep(1)
+                                #     messagebox.showwarning(
+                                #         'ALERT', "Unknown Person")
+                                #     return best_name
                             else:
                                 print('Unknown')
                                 print(count_unknown)
-                                if count_unknown == 20:
+                                if count_unknown == 30:
                                     count_unknown = 0
                                     print('break')
                                     best_name = 'unknown'
